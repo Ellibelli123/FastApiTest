@@ -6,9 +6,7 @@ from pydantic import BaseModel
 
 app = FastAPI(swagger_ui_parameters={"syntaxHighlight": False})
 
-# ----------------------------
-# Pydantic models
-# ----------------------------
+
 class BookingCreate(BaseModel):
     name: str
     class_id: int
@@ -26,15 +24,10 @@ class BookingUpdate(BaseModel):
     pass_date: Optional[date] = None
 
 
-# ----------------------------
-# In-memory "database"
-# ----------------------------
+
 bookings: list[Booking] = []
 
 
-# ----------------------------
-# Basic endpoints (handledarens kvar)
-# ----------------------------
 @app.get("/")
 def read_root():
     return {"status": "ok", "message": "Hello FastAPI"}
@@ -45,15 +38,12 @@ def read_magnus():
     return {"status": "ok", "message": "Magnus Hello FastAPI"}
 
 
-# ----------------------------
-# Bookings endpoints
-# ----------------------------
 @app.get("/bookings", response_model=list[Booking])
 def list_bookings():
     return bookings
 
 
-# POST = skapa bokning (klickbara fält i Swagger)
+
 @app.post("/bookings", response_model=Booking)
 def create_booking(
     name: str = Form(...),
@@ -73,7 +63,7 @@ def create_booking(
     return booking
 
 
-# PUT = ersätt hela bokningen (klickbara fält i Swagger)
+
 @app.put("/bookings/{booking_id}", response_model=Booking)
 def update_booking(
     booking_id: int,
@@ -93,7 +83,7 @@ def update_booking(
     raise HTTPException(status_code=404, detail="Booking not found")
 
 
-# PATCH = uppdatera delar (klickbara fält i Swagger, men valfria)
+
 @app.patch("/bookings/{booking_id}", response_model=Booking)
 def patch_booking(
     booking_id: int,

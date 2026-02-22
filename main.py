@@ -1,20 +1,26 @@
 from datetime import date, datetime
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, Form
+from fastapi import FastAPI, HTTPException, Depends, Form
 from pydantic import BaseModel
 
+from sqlalchemy.orm import Session
+from sqlalchemy import text
+
+from database import get_db, Base, engine
+from models import BookingEntity
+
 app = FastAPI(swagger_ui_parameters={"syntaxHighlight": False})
+
+
+Base.metadata.create_all(bind=engine)
+
+
 
 class BookingCreate(BaseModel):
     name: str
     class_id: int
     pass_date: date
-
-
-class Booking(BookingCreate):
-    id: int
-    created_at: datetime
 
 
 class BookingUpdate(BaseModel):
@@ -23,84 +29,93 @@ class BookingUpdate(BaseModel):
     pass_date: Optional[date] = None
 
 
+class BookingResponse(BaseModel):
+    id: int
+    name: str
+    class_id: int
+    pass_date: date
+    created_at: datetime
 
-bookings: list[Booking] = []
+    class Config:
+        from_attributes = True  # behövs för SQLAlchemy -> Pydantic
 
 
 
 @app.get("/")
-def read_root():
+def root():
     return {"status": "ok", "message": "Hello FastAPI"}
 
 
 @app.get("/magnus")
-def read_magnus():
+def magnus():
     return {"status": "ok", "message": "Magnus Hello FastAPI"}
 
 
-@app.get("/bookings", response_model=list[Booking])
-def list_bookings():
-    return bookings
+@app.get("/db-test")
+def db_test(db: Session = Depends(get_db)):
+    version = db.execute(text("SELECT version();")).fetchone()[0]
+    return {"database": version}
 
 
+@app.get("/bookings", response_model=list[BookingResponse])
+def list_bookings(db: Session = Depends(get_db)):
+    return db.query(BookingEntity).order_by(BookingEntity.id.asc()).all()
 
-@app.post("/bookings", response_model=Booking)
+
+@app.post("/bookings", response_model=BookingResponse)
 def create_booking(
     name: str = Form(...),
     class_id: int = Form(...),
     pass_date: date = Form(...),
+    db: Session = Depends(get_db),
 ):
-    payload = BookingCreate(name=name, class_id=class_id, pass_date=pass_date)
-
-    booking = Booking(
-        id=len(bookings) + 1,
-        name=payload.name,
-        class_id=payload.class_id,
-        pass_date=payload.pass_date,
-        created_at=datetime.now(),
-    )
-    bookings.append(booking)
+    booking = BookingEntity(name=name, class_id=class_id, pass_date=pass_date)
+    db.add(booking)
+    db.commit()
+    db.refresh(booking)
     return booking
 
 
-
-@app.put("/bookings/{booking_id}", response_model=Booking)
+@app.put("/bookings/{booking_id}", response_model=BookingResponse)
 def update_booking(
     booking_id: int,
     name: str = Form(...),
     class_id: int = Form(...),
     pass_date: date = Form(...),
+    db: Session = Depends(get_db),
 ):
-    payload = BookingCreate(name=name, class_id=class_id, pass_date=pass_date)
+    booking = db.query(BookingEntity).filter(BookingEntity.id == booking_id).first()
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
 
-    for booking in bookings:
-        if booking.id == booking_id:
-            booking.name = payload.name
-            booking.class_id = payload.class_id
-            booking.pass_date = payload.pass_date
-            return booking
+    booking.name = name
+    booking.class_id = class_id
+    booking.pass_date = pass_date
 
-    raise HTTPException(status_code=404, detail="Booking not found")
-
+    db.commit()
+    db.refresh(booking)
+    return booking
 
 
-@app.patch("/bookings/{booking_id}", response_model=Booking)
+@app.patch("/bookings/{booking_id}", response_model=BookingResponse)
 def patch_booking(
     booking_id: int,
     name: Optional[str] = Form(None),
     class_id: Optional[int] = Form(None),
     pass_date: Optional[date] = Form(None),
+    db: Session = Depends(get_db),
 ):
-    payload = BookingUpdate(name=name, class_id=class_id, pass_date=pass_date)
+    booking = db.query(BookingEntity).filter(BookingEntity.id == booking_id).first()
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
 
-    for booking in bookings:
-        if booking.id == booking_id:
-            if payload.name is not None:
-                booking.name = payload.name
-            if payload.class_id is not None:
-                booking.class_id = payload.class_id
-            if payload.pass_date is not None:
-                booking.pass_date = payload.pass_date
-            return booking
+    if name is not None:
+        booking.name = name
+    if class_id is not None:
+        booking.class_id = class_id
+    if pass_date is not None:
+        booking.pass_date = pass_date
 
-    raise HTTPException(status_code=404, detail="Booking not found")
+    db.commit()
+    db.refresh(booking)
+    return booking

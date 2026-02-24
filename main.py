@@ -1,106 +1,69 @@
-from datetime import date, datetime
+from datetime import date
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, Form
-from pydantic import BaseModel
+from fastapi import FastAPI, HTTPException, Form, Depends
+from sqlalchemy.orm import Session
+
+import booking_service as svc
+from database import Base, engine, get_db
+from models import Booking
 
 app = FastAPI(swagger_ui_parameters={"syntaxHighlight": False})
 
-
-class BookingCreate(BaseModel):
-    name: str
-    class_id: int
-    pass_date: date
-
-
-class Booking(BookingCreate):
-    id: int
-    created_at: datetime
-
-
-class BookingUpdate(BaseModel):
-    name: Optional[str] = None
-    class_id: Optional[int] = None
-    pass_date: Optional[date] = None
-
-
-
-bookings: list[Booking] = []
-
-
-@app.get("/")
-def read_root():
-    return {"status": "ok", "message": "Hello FastAPI"}
-
-
-@app.get("/magnus")
-def read_magnus():
-    return {"status": "ok", "message": "Magnus Hello FastAPI"}
+Base.metadata.create_all(bind=engine)
 
 
 @app.get("/bookings", response_model=list[Booking])
-def list_bookings():
-    return bookings
+def list_bookings(db: Session = Depends(get_db)):
+    return svc.list_bookings(db)
 
+
+@app.get("/bookings/{booking_id}", response_model=Booking)
+def get_booking(booking_id: int, db: Session = Depends(get_db)):
+    booking = svc.get_booking(db, booking_id)
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    return booking
 
 
 @app.post("/bookings", response_model=Booking)
 def create_booking(
-    name: str = Form(...),
-    class_id: int = Form(...),
-    pass_date: date = Form(...),
+        name: str = Form(..., description="Enter name"),
+        booking_date: date = Form(..., description="Enter booking date"),
+        db: Session = Depends(get_db),
 ):
-    payload = BookingCreate(name=name, class_id=class_id, pass_date=pass_date)
-
-    booking = Booking(
-        id=len(bookings) + 1,
-        name=payload.name,
-        class_id=payload.class_id,
-        pass_date=payload.pass_date,
-        created_at=datetime.now(),
-    )
-    bookings.append(booking)
-    return booking
-
+    return svc.create_booking(db, name=name, booking_date=booking_date)
 
 
 @app.put("/bookings/{booking_id}", response_model=Booking)
-def update_booking(
-    booking_id: int,
-    name: str = Form(...),
-    class_id: int = Form(...),
-    pass_date: date = Form(...),
+def update_booking_put(
+        booking_id: int,
+        name: str = Form(..., description="Enter name"),
+        booking_date: date = Form(..., description="Enter booking date"),
+        db: Session = Depends(get_db),
 ):
-    payload = BookingCreate(name=name, class_id=class_id, pass_date=pass_date)
-
-    for booking in bookings:
-        if booking.id == booking_id:
-            booking.name = payload.name
-            booking.class_id = payload.class_id
-            booking.pass_date = payload.pass_date
-            return booking
-
-    raise HTTPException(status_code=404, detail="Booking not found")
-
+    booking = svc.update_booking_put(db, booking_id, name, booking_date)
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    return booking
 
 
 @app.patch("/bookings/{booking_id}", response_model=Booking)
-def patch_booking(
-    booking_id: int,
-    name: Optional[str] = Form(None),
-    class_id: Optional[int] = Form(None),
-    pass_date: Optional[date] = Form(None),
+def update_booking_patch(
+        booking_id: int,
+        name: Optional[str] = Form(None),
+        booking_date: Optional[date] = Form(None),
+        db: Session = Depends(get_db),
 ):
-    payload = BookingUpdate(name=name, class_id=class_id, pass_date=pass_date)
+    booking = svc.update_booking_patch(db, booking_id, name=name, booking_date=booking_date)
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    return booking
 
-    for booking in bookings:
-        if booking.id == booking_id:
-            if payload.name is not None:
-                booking.name = payload.name
-            if payload.class_id is not None:
-                booking.class_id = payload.class_id
-            if payload.pass_date is not None:
-                booking.pass_date = payload.pass_date
-            return booking
 
-    raise HTTPException(status_code=404, detail="Booking not found")
+@app.delete("/bookings/{booking_id}")
+def delete_booking(booking_id: int, db: Session = Depends(get_db)):
+    ok = svc.delete_booking(db, booking_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    return {"status": "ok", "message": "Booking deleted"}

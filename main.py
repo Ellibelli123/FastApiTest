@@ -1,13 +1,15 @@
 from datetime import date
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, Form, Depends
+from fastapi import FastAPI, HTTPException, Form, Depends, Body
 from sqlalchemy.orm import Session
 
 import booking_service as svc
 from database import Base, engine, get_db
 from models import Booking
 
+from services.faq_handler import FaqHandler
+from pydantic import BaseModel
 app = FastAPI(swagger_ui_parameters={"syntaxHighlight": False})
 
 Base.metadata.create_all(bind=engine)
@@ -67,3 +69,18 @@ def delete_booking(booking_id: int, db: Session = Depends(get_db)):
     if not ok:
         raise HTTPException(status_code=404, detail="Booking not found")
     return {"status": "ok", "message": "Booking deleted"}
+
+
+faq_handler = FaqHandler()
+
+class FaqRequest(BaseModel):
+    question: str
+
+class FaqResponse(BaseModel):
+    question: str
+    answer: str | None
+
+@app.post("/faq", response_model=FaqResponse)
+async def ask_faq(req: FaqRequest):
+    answer = await faq_handler.get_answer(req.question)
+    return {"question": req.question, "answer": answer}
